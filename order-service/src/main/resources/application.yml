@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: order-service
+
+  datasource:
+    url: ${ORDER_DB_URL:jdbc:postgresql://localhost:5432/ecommerce_order_db}
+    username: ${ORDER_DB_USERNAME}
+    password: ${ORDER_DB_PASSWORD}
+    hikari:
+      pool-name: order-service-hikari
+      maximum-pool-size: ${ORDER_DB_MAX_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    locations: classpath:db/migration
+
+  data:
+    web:
+      pageable:
+        default-page-size: 20
+        max-page-size: 100
+
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+  cloud:
+    openfeign:
+      client:
+        config:
+          # Applies to every Feign client unless overridden by client name.
+          default:
+            # Without timeouts, one slow downstream service can exhaust this service's
+            # request threads and take order-service down with it.
+            connectTimeout: 2000
+            readTimeout: 3000
+            loggerLevel: basic
+
+server:
+  port: ${ORDER_SERVICE_PORT:8083}
+  shutdown: graceful
+
+# Where the other services live. Plain configuration, not service discovery: Phase 1 keeps
+# this explicit, and the values map straight onto Docker Compose service names.
+services:
+  user:
+    url: ${USER_SERVICE_URL:http://localhost:8081}
+  product:
+    url: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+logging:
+  level:
+    com.ecommerce.order: INFO

@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: product-service
+
+  datasource:
+    url: ${PRODUCT_DB_URL:jdbc:postgresql://localhost:5432/ecommerce_product_db}
+    username: ${PRODUCT_DB_USERNAME}
+    password: ${PRODUCT_DB_PASSWORD}
+    hikari:
+      pool-name: product-service-hikari
+      maximum-pool-size: ${PRODUCT_DB_MAX_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    locations: classpath:db/migration
+
+  data:
+    web:
+      pageable:
+        default-page-size: 20
+        max-page-size: 100
+
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  port: ${PRODUCT_SERVICE_PORT:8082}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+logging:
+  level:
+    com.ecommerce.product: INFO

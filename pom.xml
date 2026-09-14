@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Aggregator POM only. It lets you build every service with one command
+  (mvn verify from the repo root) but deliberately does NOT act as a shared
+  parent: each service owns its own dependency versions and release cycle.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.ecommerce</groupId>
+    <artifactId>ecommerce-platform</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>ecommerce-platform</name>
+
+    <modules>
+        <module>user-service</module>
+	<module>product-service</module>
+	<module>order-service</module>
+        <!-- Added as each service is built:
+        
+
+        -->
+    </modules>
+</project>

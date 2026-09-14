@@ -1,0 +1,16 @@
+# Secrets - never commit real credentials
+.env
+*.env
+!.env.example
+
+# Build output
+target/
+*.jar
+!**/.mvn/wrapper/maven-wrapper.jar
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+HELP.md
