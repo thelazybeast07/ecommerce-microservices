@@ -22,6 +22,7 @@
         <java.version>26</java.version>
         <!-- springdoc is not managed by the Spring Boot BOM. 2.8.x targets Boot 3.5. -->
         <springdoc.version>2.8.9</springdoc.version>
+        <jjwt.version>0.12.6</jjwt.version>
     </properties>
 
     <dependencies>
@@ -62,12 +63,42 @@
         </dependency>
 
         <!--
-          Only the crypto module (BCrypt). This does NOT switch on Spring Security's
-          filter chain; authentication arrives in a later phase.
+          Full Spring Security now, not just the crypto module. This DOES switch on the
+          filter chain, which means every endpoint is denied by default until SecurityConfig
+          says otherwise. spring-security-crypto (BCrypt) comes in transitively.
         -->
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- MockMvc helpers for testing secured endpoints -->
+        <dependency>
             <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-crypto</artifactId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          JJWT: creates and verifies JSON Web Tokens. Split into three artifacts on purpose -
+          the API is compile-scope, the implementation and the Jackson bridge are runtime-only,
+          so application code can only reach the stable public API.
+        -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- OpenAPI 3 spec generation + Swagger UI -->

@@ -1,3 +1,9 @@
+jwt:
+  # The same secret user-service signs with. This service only verifies; it never issues.
+  secret: ${JWT_SECRET}
+  # Must match the issuer user-service puts in the token, or every token is rejected.
+  issuer: ecommerce-user-service
+  
 spring:
   application:
     name: order-service

@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,6 +29,11 @@ import java.util.UUID;
  * Addresses are a sub-resource of a customer: they cannot exist without one, and the URL makes
  * that ownership explicit. Not paginated, because a customer has a handful of addresses.
  */
+/**
+ * Every method here is guarded by the same rule, so it is declared once on the class:
+ * you may manage your own addresses, and an admin may manage anyone's.
+ */
+@PreAuthorize("hasRole('ADMIN') or #customerId == authentication.principal")
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/addresses")
 @RequiredArgsConstructor

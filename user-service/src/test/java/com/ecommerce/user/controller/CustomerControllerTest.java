@@ -3,10 +3,16 @@ package com.ecommerce.user.controller;
 import com.ecommerce.user.dto.CustomerResponse;
 import com.ecommerce.user.entity.CustomerStatus;
 import com.ecommerce.user.exception.ResourceNotFoundException;
+import com.ecommerce.user.configuration.JwtAuthenticationFilter;
+import com.ecommerce.user.configuration.SecurityConfig;
+import com.ecommerce.user.configuration.SecurityProblemHandlers;
 import com.ecommerce.user.service.CustomerService;
+import com.ecommerce.user.service.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,6 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * database. Verifies the HTTP contract: status codes, headers, JSON shape, validation.
  */
 @WebMvcTest(CustomerController.class)
+// A web slice does not pick up @Component beans, so the security pieces are imported
+// explicitly. Keeping them in means these tests exercise the real rules, not a bypass.
+@Import({SecurityConfig.class, JwtAuthenticationFilter.class, SecurityProblemHandlers.class})
 class CustomerControllerTest {
 
     @Autowired
@@ -37,6 +46,10 @@ class CustomerControllerTest {
 
     @MockitoBean
     private CustomerService customerService;
+
+    /** Needed by JwtAuthenticationFilter. These tests set the caller directly instead. */
+    @MockitoBean
+    private JwtService jwtService;
 
     @Test
     void register_validRequest_returns201WithLocationAndNoPasswordInBody() throws Exception {
@@ -77,6 +90,7 @@ class CustomerControllerTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
     void getCustomer_unknownId_returns404ProblemDetail() throws Exception {
         UUID id = UUID.randomUUID();
         when(customerService.getCustomer(id)).thenThrow(ResourceNotFoundException.of("Customer", id));
@@ -89,6 +103,7 @@ class CustomerControllerTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
     void getCustomer_malformedId_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/customers/{id}", "not-a-uuid"))
                 .andExpect(status().isBadRequest());

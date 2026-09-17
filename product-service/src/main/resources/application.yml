@@ -1,3 +1,7 @@
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: ecommerce-user-service
+
 spring:
   application:
     name: product-service

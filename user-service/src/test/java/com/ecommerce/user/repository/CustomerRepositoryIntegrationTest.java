@@ -3,6 +3,7 @@ package com.ecommerce.user.repository;
 import com.ecommerce.user.configuration.JpaAuditingConfig;
 import com.ecommerce.user.entity.Customer;
 import com.ecommerce.user.entity.CustomerStatus;
+import com.ecommerce.user.entity.Role;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -45,6 +46,8 @@ class CustomerRepositoryIntegrationTest {
         assertThat(saved.getCreatedAt()).isNotNull();
         assertThat(saved.getUpdatedAt()).isNotNull();
         assertThat(saved.getVersion()).isZero();
+        // V3 added the column with a DEFAULT, and the constructor sets it explicitly
+        assertThat(saved.getRole()).isEqualTo(Role.CUSTOMER);
     }
 
     @Test

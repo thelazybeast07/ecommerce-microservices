@@ -59,6 +59,11 @@ public class Customer {
     @Column(name = "status", nullable = false, length = 20)
     private CustomerStatus status;
 
+    /** Drives authorization. Set at registration; changing it is an admin action, not self-service. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 20)
+    private Role role;
+
     /** Optimistic locking: concurrent updates to the same row fail instead of silently overwriting. */
     @Version
     @Column(name = "version", nullable = false)
@@ -79,6 +84,9 @@ public class Customer {
         this.phone = phone;
         this.passwordHash = passwordHash;
         this.status = CustomerStatus.ACTIVE;
+        // Public registration always creates a shopper. An ADMIN is made deliberately,
+        // never by anyone who can reach the signup form.
+        this.role = Role.CUSTOMER;
     }
 
     public void updateProfile(String firstName, String lastName, String phone) {

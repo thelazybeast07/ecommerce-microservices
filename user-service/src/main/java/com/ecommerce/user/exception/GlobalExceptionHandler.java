@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mapping.PropertyReferenceException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -28,6 +30,15 @@ import java.util.List;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    /**
+     * 401, not 403. The distinction matters: 401 means "I do not know who you are",
+     * 403 means "I know who you are and you still may not do this".
+     */
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, "Authentication failed", ex.getMessage());
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
@@ -67,6 +78,28 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail handleUnknownProperty(PropertyReferenceException ex) {
         return problem(HttpStatus.BAD_REQUEST, "Invalid request parameter",
                 "Unknown property '%s'".formatted(ex.getPropertyName()));
+    }
+
+    /**
+     * Raised by {@code @PreAuthorize} when a rule fails - for example a customer asking for
+     * someone else's record.
+     *
+     * <p>This handler is NOT optional. {@code @PreAuthorize} throws inside the controller call,
+     * so without an explicit handler the catch-all {@code Exception} handler below would catch
+     * it and return 500. A permission failure reported as "internal server error" is both
+     * misleading to the caller and hides a real signal from your logs.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        return problem(HttpStatus.FORBIDDEN, "Access denied",
+                "You do not have permission to perform this action.");
+    }
+
+    /** No usable credentials at all -> 401, as distinct from the 403 above. */
+    @ExceptionHandler(AuthenticationException.class)
+    public ProblemDetail handleAuthentication(AuthenticationException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, "Authentication required",
+                "A valid bearer token is required.");
     }
 
     /** Last resort. Log everything, reveal nothing. */

@@ -18,6 +18,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,8 +60,13 @@ public class CustomerController {
         return ResponseEntity.created(location).body(created);
     }
 
+    /**
+     * Admin only. Listing every customer is a staff operation; a shopper has no business
+     * enumerating other people's accounts.
+     */
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
-    @Operation(summary = "List customers (paged)",
+    @Operation(summary = "List customers (paged) - ADMIN only",
             description = "Optional status filter. Example: ?status=ACTIVE&page=0&size=20&sort=lastName,asc")
     public PageResponse<CustomerResponse> listCustomers(
             @RequestParam(required = false) CustomerStatus status,
@@ -69,22 +75,33 @@ public class CustomerController {
         return customerService.listCustomers(status, pageable);
     }
 
+    /**
+     * Your own record, or any record if you are an admin.
+     *
+     * <p>{@code authentication.principal} is the UUID our filter put in the SecurityContext.
+     * Comparing it to the id in the URL is what stops customer A from reading customer B
+     * simply by changing the number - the bug class known as IDOR (insecure direct object
+     * reference), and the most common real-world API vulnerability there is.
+     */
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal")
     @GetMapping("/{id}")
-    @Operation(summary = "Get a customer by id")
+    @Operation(summary = "Get a customer by id - your own, or any if ADMIN")
     @ApiResponse(responseCode = "200", description = "Found")
     @ApiResponse(responseCode = "404", description = "No such customer")
     public CustomerResponse getCustomer(@PathVariable UUID id) {
         return customerService.getCustomer(id);
     }
 
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal")
     @GetMapping("/{id}/profile")
-    @Operation(summary = "Get a customer's profile including addresses")
+    @Operation(summary = "Get a customer's profile including addresses - your own, or any if ADMIN")
     public CustomerProfileResponse getProfile(@PathVariable UUID id) {
         return customerService.getProfile(id);
     }
 
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal")
     @PutMapping("/{id}")
-    @Operation(summary = "Update a customer's profile")
+    @Operation(summary = "Update a customer's profile - your own, or any if ADMIN")
     @ApiResponse(responseCode = "200", description = "Updated")
     @ApiResponse(responseCode = "404", description = "No such customer")
     @ApiResponse(responseCode = "409", description = "Customer is inactive, or was modified concurrently")
@@ -92,9 +109,10 @@ public class CustomerController {
         return customerService.updateCustomer(id, request);
     }
 
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Deactivate a customer (soft delete, idempotent)")
+    @Operation(summary = "Deactivate a customer - your own, or any if ADMIN")
     public void deactivateCustomer(@PathVariable UUID id) {
         customerService.deactivateCustomer(id);
     }

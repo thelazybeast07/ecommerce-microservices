@@ -27,6 +27,27 @@ services:
       timeout: 5s
       retries: 10
 
+  # pgAdmin: a browser UI for PostgreSQL. Opt-in, so it only runs when you ask for it:
+  #   docker compose --profile tools up -d pgadmin
+  # Then open http://localhost:5050
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ecommerce-pgadmin
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?Set PGADMIN_PASSWORD in .env}
+      # Skips the master-password prompt; fine for a local development tool.
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      # Keeps your registered servers and preferences between restarts.
+      - pgadmin-data:/var/lib/pgadmin
+
   # Application containers are opt-in: docker compose --profile apps up --build
   user-service:
     build: ./user-service
@@ -41,5 +62,35 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
 
+  product-service:
+    build: ./product-service
+    profiles: ["apps"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PRODUCT_DB_URL: jdbc:postgresql://postgres:5432/ecommerce_product_db
+      PRODUCT_DB_USERNAME: ${PRODUCT_DB_USERNAME}
+      PRODUCT_DB_PASSWORD: ${PRODUCT_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:8082:8082"
+
+  order-service:
+    build: ./order-service
+    profiles: ["apps"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ORDER_DB_URL: jdbc:postgresql://postgres:5432/ecommerce_order_db
+      ORDER_DB_USERNAME: ${ORDER_DB_USERNAME}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD}
+      # Inside the Compose network, services are reachable by their service name.
+      USER_SERVICE_URL: http://user-service:8081
+      PRODUCT_SERVICE_URL: http://product-service:8082
+    ports:
+      - "127.0.0.1:8083:8083"
+
 volumes:
   postgres-data:
+  pgadmin-data:

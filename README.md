@@ -2,7 +2,7 @@
 
 A microservices e-commerce backend built incrementally as a learning and portfolio project with Java 21, Spring Boot, PostgreSQL and Docker.
 
-**Status: Phase 1 complete.** All three services are implemented.
+**Status: Phase 1 complete. Phase 2 (security) in progress.**
 
 | Service | Status |
 |---|---|
@@ -10,7 +10,11 @@ A microservices e-commerce backend built incrementally as a learning and portfol
 | product-service | Implemented |
 | order-service | Implemented |
 
-Kafka, Redis, security (OAuth2/JWT), an API gateway, observability, React and the data platform (Databricks, Spark, Delta Lake) are planned for later phases and are intentionally not present yet.
+user-service now issues JWTs at `POST /api/v1/auth/login`. Token *validation* in each service
+is the next step — right now a token can be obtained but nothing yet checks it.
+
+Kafka, Redis, an API gateway, observability, React and the data platform (Databricks, Spark,
+Delta Lake) are planned for later phases and are intentionally not present yet.
 
 ## 1. Architecture
 
@@ -44,6 +48,11 @@ docker compose down -v && docker compose up -d postgres
 ```
 
 ## 4. Running the services
+
+**Working in VS Code with pgAdmin?** See [docs/day-3-setup.md](docs/day-3-setup.md) for the
+one-command daily startup, one-click service launches, debugging, and browsing the data in
+pgAdmin. The manual steps below still work and are worth understanding once.
+
 
 ### user-service from your shell or IDE
 
@@ -115,7 +124,29 @@ mvn test       # unit, web-slice and Testcontainers integration tests (Docker mu
 
 Or build everything from the repository root with `mvn verify`.
 
-## 5. API documentation
+## 5. Verifying the whole platform
+
+With all three services running, this script exercises every Phase 1 behaviour end to end and
+prints what it found:
+
+```powershell
+.\scripts\verify-phase1.ps1
+```
+
+It creates its own uniquely-named test data and deletes nothing. It checks order placement
+across all three services, that prices cannot be supplied by the client, that an order
+snapshots what it references, 422 for bad references, the order state machine, and idempotent
+cancellation.
+
+To see graceful degradation, stop product-service (Ctrl+C in its window) and run:
+
+```powershell
+.\scripts\verify-degradation.ps1 -OrderId <an order id from the first script>
+```
+
+Writes fail fast with 503 while reads keep working.
+
+## 6. API documentation
 
 With user-service running:
 
@@ -164,7 +195,7 @@ product-service and computes the total itself.
 
 The full endpoint list for all three services is in [docs/phase-1-design.md#4-api-contract](docs/phase-1-design.md#4-api-contract).
 
-## 6. Database structure
+## 7. Database structure
 
 | Database | Tables | Notes |
 |---|---|---|
@@ -174,7 +205,7 @@ The full endpoint list for all three services is in [docs/phase-1-design.md#4-ap
 
 Conventions: UUID primary keys, `NUMERIC(19,2)` for money, `TIMESTAMPTZ` in UTC, enums stored as strings with `CHECK` constraints, a `version` column for optimistic locking. The schema is owned by Flyway; Hibernate only validates it.
 
-## 7. Important design decisions
+## 8. Important design decisions
 
 - **Database per service**, enforced with separate database logins, and no cross-service foreign keys.
 - **Snapshots over joins**: orders will copy price and shipping address at order time.
@@ -194,8 +225,11 @@ Conventions: UUID primary keys, `NUMERIC(19,2)` for money, `TIMESTAMPTZ` in UTC,
 - **Downstream failures are translated**: a downstream 404 becomes a 422 naming what was missing; a timeout or 5xx becomes a 503, never a 500.
 - **Order transitions live in a state machine** on the `OrderStatus` enum, not in scattered if-statements.
 - **No secrets in Git**: credentials come from environment variables; `.env` is git-ignored.
+- **Passwords are BCrypt-hashed**, never stored or returned in plain text, and never logged.
+- **Login failures are indistinguishable**: an unknown email and a wrong password return the same 401, so the API cannot be used to discover which addresses are registered.
+- **JWTs carry the customer id and role**, are signed with HS256, and expire in 15 minutes — a token cannot be revoked once issued, so short expiry is what bounds the damage.
 
-## 8. How the services communicate
+## 9. How the services communicate
 
 Clients call each service directly on its own port (8081, 8082, 8083). When an order is placed, order-service calls user-service to confirm the customer is active and to fetch the shipping address, and calls product-service once, in a batch, to get current prices. Remote calls have timeouts, happen before the local database transaction begins, and their failures are translated into 422 or 503 responses. There are no distributed transactions. Details and a sequence diagram: [docs/phase-1-design.md#5-service-communication-design](docs/phase-1-design.md#5-service-communication-design).
 

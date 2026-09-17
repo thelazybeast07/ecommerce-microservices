@@ -20,6 +20,7 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
+      
         jdbc:
           time_zone: UTC
 
@@ -40,6 +41,15 @@ server:
   port: ${USER_SERVICE_PORT:8081}
   # Finish in-flight requests before shutting down (important in containers)
   shutdown: graceful
+
+jwt:
+  # NO default. A hard-coded fallback signing key is how a project ends up shipping with
+  # a secret that anyone reading the repository already knows.
+  secret: ${JWT_SECRET}
+  # Short on purpose. A token cannot be un-issued, so expiry is what bounds the damage
+  # when one leaks or an account is deactivated. See the walkthrough.
+  expiry-minutes: ${JWT_EXPIRY_MINUTES:15}
+  issuer: ecommerce-user-service
 
 management:
   endpoints:
