@@ -18,6 +18,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,6 +44,7 @@ public class ProductController {
 
     private final ProductService productService;
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     @Operation(summary = "Create a product")
     @ApiResponse(responseCode = "201", description = "Created; Location header points to it")
@@ -92,6 +94,7 @@ public class ProductController {
         return productService.getProduct(id);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}")
     @Operation(summary = "Update a product", description = "SKU cannot be changed; retire and recreate instead")
     @ApiResponse(responseCode = "409", description = "Product is inactive, or was modified concurrently")
@@ -100,7 +103,8 @@ public class ProductController {
                                          @Valid @RequestBody UpdateProductRequest request) {
         return productService.updateProduct(id, request);
     }
-
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Deactivate a product (soft delete, idempotent)")
