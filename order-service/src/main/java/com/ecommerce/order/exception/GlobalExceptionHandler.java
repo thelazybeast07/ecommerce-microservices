@@ -10,6 +10,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -72,6 +74,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 "Unknown property '%s'".formatted(ex.getPropertyName()));
     }
 
+        /**
+     * Raised by @PreAuthorize and by the ownership check in OrderService. NOT optional:
+     * without it the catch-all below would catch this and report a permission failure as 500.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        return problem(HttpStatus.FORBIDDEN, "Access denied",
+                "You do not have permission to perform this action.");
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ProblemDetail handleAuthentication(AuthenticationException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, "Authentication required",
+                "A valid bearer token is required.");
+    }
+
+    /**
+     * A downstream service rejected the forwarded token - usually it expired between login
+     * and the call. 401 rather than 503: nothing is broken, the caller needs to sign in again.
+     */
+    @ExceptionHandler(DownstreamAuthException.class)
+    public ProblemDetail handleDownstreamAuth(DownstreamAuthException ex) {
+        log.info("Downstream refused the forwarded token: {}", ex.getMessage());
+        return problem(HttpStatus.UNAUTHORIZED, "Authentication required",
+                "Your session was not accepted. Please sign in again and retry.");
+    }
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpected(Exception ex) {
         log.error("Unhandled exception", ex);

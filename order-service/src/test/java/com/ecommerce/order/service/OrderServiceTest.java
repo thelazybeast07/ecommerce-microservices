@@ -221,7 +221,7 @@ class OrderServiceTest {
         order.transitionTo(OrderStatus.PAID);
         when(orderRepository.findWithItemsById(orderId)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.cancelOrder(orderId))
+        assertThatThrownBy(() -> orderService.cancelOrder(orderId, customerId, false))
                 .isInstanceOf(InvalidOrderStateException.class);
     }
 
@@ -233,7 +233,7 @@ class OrderServiceTest {
         order.cancel();
         when(orderRepository.findWithItemsById(orderId)).thenReturn(Optional.of(order));
 
-        OrderResponse response = orderService.cancelOrder(orderId);
+        OrderResponse response = orderService.cancelOrder(orderId,customerId, false);
 
         assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
         verify(orderRepository, never()).saveAndFlush(any());

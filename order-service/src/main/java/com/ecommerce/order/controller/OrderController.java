@@ -10,6 +10,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PostAuthorize;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +34,7 @@ public class OrderController {
 
     private final OrderService orderService;
 
+    @PreAuthorize("hasRole('ADMIN') or #request.customerId() == authentication.principal")
     @PostMapping
     @Operation(summary = "Place an order",
             description = "Prices are fetched from product-service; the request never carries prices.")
@@ -47,6 +52,7 @@ public class OrderController {
         return ResponseEntity.created(location).body(created);
     }
 
+    @PostAuthorize("hasRole('ADMIN') or returnObject.customerId() == authentication.principal")
     @GetMapping("/{id}")
     @Operation(summary = "Get an order by id",
             description = "Served entirely from this service's own data; no downstream calls.")
@@ -62,9 +68,10 @@ public class OrderController {
             description = "Allowed before payment only. Repeating it on an already-cancelled order is a no-op.")
     @ApiResponse(responseCode = "409", description = "The order can no longer be cancelled")
     public OrderResponse cancelOrder(@PathVariable UUID id) {
-        return orderService.cancelOrder(id);
+        return orderService.cancelOrder(id, callerId(), callerIsAdmin());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{id}/status")
     @Operation(summary = "Move an order to a new status",
             description = "Only transitions allowed by the order state machine are accepted.")
@@ -72,5 +79,16 @@ public class OrderController {
     public OrderResponse updateStatus(@PathVariable UUID id,
                                       @Valid @RequestBody UpdateOrderStatusRequest request) {
         return orderService.updateStatus(id, request.status());
+    }
+
+    /** The UUID our JWT filter placed in the SecurityContext for this request. */
+    private static UUID callerId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return (UUID) authentication.getPrincipal();
+    }
+
+    private static boolean callerIsAdmin() {
+        return SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 }

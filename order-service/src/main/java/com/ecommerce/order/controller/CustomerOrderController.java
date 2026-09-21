@@ -11,6 +11,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +31,7 @@ import java.util.UUID;
  * a read that does not need one, and an unknown customer simply has no orders - an empty page
  * is the honest answer.
  */
+@PreAuthorize("hasRole('ADMIN') or #customerId == authentication.principal")
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/orders")
 @RequiredArgsConstructor

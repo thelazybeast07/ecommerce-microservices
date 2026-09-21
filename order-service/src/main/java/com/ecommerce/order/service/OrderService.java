@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -128,9 +129,15 @@ public class OrderService {
      * a later phase.
      */
     @Transactional
-    public OrderResponse cancelOrder(UUID id) {
+    public OrderResponse cancelOrder(UUID id, UUID callerId, boolean callerIsAdmin) {
         Order order = orderRepository.findWithItemsById(id)
                 .orElseThrow(() -> ResourceNotFoundException.of("Order", id));
+        
+        // Checked here, not with an annotation: the owner is only known once the order is
+        // loaded, and this must happen BEFORE anything changes.
+        if (!callerIsAdmin && !order.getCustomerId().equals(callerId)) {
+            throw new AccessDeniedException("This order belongs to another customer");
+        }
 
         // Already cancelled -> return as-is rather than failing, so a repeated cancel is
         // idempotent for the caller.

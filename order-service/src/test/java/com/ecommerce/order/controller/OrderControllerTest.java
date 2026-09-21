@@ -23,6 +23,8 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.endsWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -122,7 +124,7 @@ class OrderControllerTest {
     @Test
     void cancelOrder_illegalState_returns409() throws Exception {
         UUID id = UUID.randomUUID();
-        when(orderService.cancelOrder(id))
+        when(orderService.cancelOrder(eq(id), any(), anyBoolean()))
                 .thenThrow(new InvalidOrderStateException("An order in status SHIPPED can no longer be cancelled"));
 
         mockMvc.perform(patch("/api/v1/orders/{id}/cancel", id))
