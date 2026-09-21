@@ -4,11 +4,110 @@ Every change to the codebase: **what** changed, **where**, **why**, and **what t
 
 Newest entries at the top. Each entry is self-contained, so you can read one without the others.
 
+## Contents
+
+**Phase 2 — Security**
+
+- Step 7 — Completing method-level authorization
+- Step 6 — Seed data: a shop that looks like a shop
+- Step 5 — Documentation set: PDFs and the beginner's guide
+- Step 4 — Rewriting the verification script for a secured platform
+- Step 3 — Enforcing tokens in product-service and order-service
+- Step 2 — Enforcing tokens in user-service
+- Step 1 — Login and token issuing in user-service
+
+**Phase 1 — Core services**
+
+- Step 3 — order-service
+- Step 2 — product-service
+- Step 1 — user-service and foundations
+
 ---
 
-## Seed data — a shop that looks like a shop
+## Phase 2, Step 7 — Completing method-level authorization
 
-**Date:** Day 3
+### What changed
+
+| File | New / Changed | What it does |
+|---|---|---|
+| `product-service/.../controller/ProductController.java` | Changed | `@PreAuthorize("hasRole('ADMIN')")` on create, update, delete |
+| `product-service/.../controller/CategoryController.java` | Changed | Same three rules |
+| `product-service/.../exception/GlobalExceptionHandler.java` | Changed | Handlers for `AccessDeniedException` (403) and `AuthenticationException` (401), placed above the catch-all |
+| `order-service/.../controller/OrderController.java` | Changed | `@PreAuthorize` on place and on status; `@PostAuthorize` on read; cancel passes the caller's id and admin flag to the service |
+| `order-service/.../controller/CustomerOrderController.java` | Changed | Class-level rule: your own history, or any if ADMIN |
+| `order-service/.../service/OrderService.java` | Changed | `cancelOrder(id, callerId, callerIsAdmin)` checks ownership after loading, before mutating |
+| `order-service/.../exception/GlobalExceptionHandler.java` | Changed | Same two handlers, plus `DownstreamAuthException` → 401 |
+| `order-service/src/test/.../OrderServiceTest.java` | Changed | Calls updated to the new `cancelOrder` signature |
+| `order-service/src/test/.../OrderControllerTest.java` | Changed | Stub updated to argument matchers for the new signature |
+| `product-service/.../ProductServiceApplication.java`, `order-service/.../OrderServiceApplication.java` | Changed | `@EnableConfigurationProperties(JwtProperties.class)` |
+| `product-service` and `order-service` `application.yml` | Changed | `jwt.secret` and `jwt.issuer` block |
+| `scripts/run.ps1` | **New** | Loads `.env`, checks `JWT_SECRET`, starts one service |
+| `scripts/seed-data.ps1` | Changed | Handles paged and bare-array responses; follows the real state machine (PROCESSING between PAID and SHIPPED) |
+| `scripts/verify-phase2.ps1` | Changed | A different category name per attempt, so a security failure is not masked by a 409 |
+
+### Why
+
+`verify-phase2.ps1` reported 8 failures. Path-level rules (401 with no token) worked in all
+three services, but product-service and order-service controllers had never received their
+`@PreAuthorize` annotations. Any logged-in customer could create products, read other
+customers' orders, push an order through fulfilment, and cancel orders that were not theirs.
+
+### Three techniques, and where each was used
+
+| Technique | Used on | Why |
+|---|---|---|
+| `@PreAuthorize` | Place order, change status, catalogue writes, order history | The rule needs only the URL or request body |
+| `@PostAuthorize` | `GET /orders/{id}` | The owner is in the database; load first, then check. Safe only because it is a read |
+| Check inside the service | `PATCH /orders/{id}/cancel` | Needs the loaded order AND changes data — a post-check would cancel first and refuse afterwards |
+
+### What went wrong along the way, and what each taught
+
+- **Partial file copies.** Every failure after the product-service and order-service security changes traced to zip copies that silently
+  dropped files — pom dependencies, a `yml` block, controllers, `TokenRelayInterceptor`.
+  Fixed permanently by moving to Git: `git status --short` identified the stale files in one
+  command, after days of guessing.
+- **Editor versus disk.** A fix sat in an unsaved VS Code buffer while Maven compiled the old
+  file. The stack trace named an expression that no longer appeared in the editor. Lesson: the
+  log shows what is *running*; the editor shows what you *meant*. Fixed by enabling Auto Save.
+- **An `or` that only broke for customers.** `hasRole('ADMIN') or #request.customerId() ...` on a
+  method with no `request` parameter short-circuited for admins and threw for everyone else.
+  An admin-only test would have passed. This is why every rule is tested from both sides.
+- **Unset environment variables.** `jwt.secret must be at least 32 characters; got 13` — 13 is the
+  length of the literal text `${JWT_SECRET}`. Recurred five times; ended by `run.ps1`.
+- **Identity must never be a request parameter.** An intermediate edit gave the cancel endpoint
+  `UUID callerId, boolean callerIsAdmin` parameters. Spring binds those from the query string,
+  so `?callerIsAdmin=true` would have granted admin to anyone. Identity comes only from the
+  verified token.
+- **Wrong advice, corrected.** `@EnableConfigurationProperties` placed on the properties record
+  compiles but does nothing; it must sit on a `@Configuration` class. `@ConfigurationProperties`
+  declares a mapping; `@EnableConfigurationProperties` registers it.
+- **A stale build hides a broken source tree.** product-service appeared to work until a
+  `clean` build removed old `.class` files. `clean` tells the truth.
+
+### Result
+
+`verify-phase2.ps1`: **45 of 45 passing.** Seed data creates a full order history across every
+lifecycle state.
+
+| Request | Before | After |
+|---|---|---|
+| Customer creates a category | 201 | **403** |
+| Customer reads another customer's order | 200 | **403** |
+| Customer reads their own order | 200 | 200 |
+| Customer advances an order's status | 200 | **403** |
+| Customer cancels another customer's order | 200, order cancelled | **403, order unchanged** |
+| Customer places an order in someone else's name | 201 | **403** |
+
+### Known consequences
+
+- `OrderControllerTest` compiles but predates security: it sends no credentials, and the
+  controller now reads the caller from the token. It needs security-aware setup before
+  `mvn test` passes it. Builds use `-DskipTests` until then.
+- HS256 shared secret, non-revocable tokens and no login rate limiting remain, as documented.
+
+---
+
+## Phase 2, Step 6 — Seed data: a shop that looks like a shop
 
 ### What changed
 
@@ -44,9 +143,7 @@ decision to make together, not something a script does silently.
 
 ---
 
-## Documentation set — end-to-end PDFs and the beginner's guide
-
-**Date:** Day 3
+## Phase 2, Step 5 — Documentation set: PDFs and the beginner's guide
 
 ### What changed
 
@@ -74,8 +171,6 @@ and PDFs can be regenerated at any milestone.
 ---
 
 ## Phase 2, Step 4 — Rewriting the verification script for a secured platform
-
-**Date:** Day 3
 
 ### What changed
 
@@ -120,8 +215,6 @@ with a short note explaining what it proves.
 ---
 
 ## Phase 2, Step 3 — Enforcing tokens in product-service and order-service
-
-**Date:** Day 3
 
 ### What changed
 
@@ -234,8 +327,6 @@ not a style preference.
 
 ## Phase 2, Step 2 — Enforcing tokens in user-service
 
-**Date:** Day 3
-
 ### What changed
 
 | File | New / Changed | What it does |
@@ -321,8 +412,6 @@ An explicit handler now sits above the catch-all, and `SecurityRulesTest` fails 
 
 ## Phase 2, Step 1 — Login and token issuing in user-service
 
-**Date:** Day 3
-
 ### What changed
 
 | File | New / Changed | What it does |
@@ -376,8 +465,6 @@ anyone reading the repository already knows. Missing secret means the service re
 
 ## Phase 1, Step 3 — order-service
 
-**Date:** Day 2
-
 ### What changed
 
 New module `order-service` (port 8083), new database `ecommerce_order_db`, two migrations
@@ -417,8 +504,6 @@ Reading an order needs no downstream calls at all — proven by an integration t
 
 ## Phase 1, Step 2 — product-service
 
-**Date:** Day 2
-
 ### What changed
 
 New module `product-service` (port 8082), database `ecommerce_product_db`, migrations for
@@ -439,8 +524,6 @@ New module `product-service` (port 8082), database `ecommerce_product_db`, migra
 ---
 
 ## Phase 1, Step 1 — user-service and foundations
-
-**Date:** Day 1
 
 ### What changed
 
