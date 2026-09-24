@@ -2,6 +2,7 @@ package com.ecommerce.user.controller;
 
 import com.ecommerce.user.dto.TokenResponse;
 import com.ecommerce.user.exception.InvalidCredentialsException;
+import com.ecommerce.user.exception.TooManyLoginAttemptsException;
 import com.ecommerce.user.configuration.JwtAuthenticationFilter;
 import com.ecommerce.user.configuration.SecurityConfig;
 import com.ecommerce.user.configuration.SecurityProblemHandlers;
@@ -19,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,7 +39,7 @@ class AuthControllerTest {
 
     @Test
     void login_validCredentials_returns200WithToken() throws Exception {
-        when(authService.login(any())).thenReturn(new TokenResponse("a.b.c", "Bearer", 900));
+        when(authService.login(any(), any())).thenReturn(new TokenResponse("a.b.c", "Bearer", 900));
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -51,7 +53,7 @@ class AuthControllerTest {
 
     @Test
     void login_badCredentials_returns401_notA403() throws Exception {
-        when(authService.login(any())).thenThrow(new InvalidCredentialsException());
+        when(authService.login(any(), any())).thenThrow(new InvalidCredentialsException());
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -72,5 +74,19 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.errors[?(@.field == 'password')]").exists());
 
         verifyNoInteractions(authService);
+    }
+
+    @Test
+    void login_rateLimited_returns429WithRetryAfter() throws Exception {
+        when(authService.login(any(), any())).thenThrow(new TooManyLoginAttemptsException(42));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"jane.doe@example.com","password":"whatever"}"""))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "42"))
+                .andExpect(jsonPath("$.title").value("Too many login attempts"))
+                .andExpect(jsonPath("$.retryAfterSeconds").value(42));
     }
 }

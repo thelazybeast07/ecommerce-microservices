@@ -8,6 +8,7 @@ Newest entries at the top. Each entry is self-contained, so you can read one wit
 
 **Phase 2 — Security**
 
+- Step 8 — Rate limiting on login
 - Step 7 — Completing method-level authorization
 - Step 6 — Seed data: a shop that looks like a shop
 - Step 5 — Documentation set: PDFs and the beginner's guide
@@ -21,6 +22,85 @@ Newest entries at the top. Each entry is self-contained, so you can read one wit
 - Step 3 — order-service
 - Step 2 — product-service
 - Step 1 — user-service and foundations
+
+---
+
+## Phase 2, Step 8 — Rate limiting on login
+
+### What changed
+
+| File | New / Changed | What it does |
+|---|---|---|
+| `user-service/pom.xml` | Changed | Adds Caffeine; version supplied by Spring Boot's dependency management |
+| `user-service/.../application.yml` | Changed | New `login-rate-limit` block: per-IP and per-email limits, cache bound |
+| `configuration/LoginRateLimitProperties.java` | **New** | Typed settings, with safe defaults if the block is missing |
+| `configuration/RateLimitConfig.java` | **New** | Registers those settings — on its own `@Configuration` class |
+| `ratelimit/TokenBucket.java` | **New** | The algorithm: capacity, steady refill, injected clock |
+| `ratelimit/LoginRateLimiter.java` | **New** | Two buckets per attempt — one per IP, one per submitted email |
+| `exception/TooManyLoginAttemptsException.java` | **New** | Carries the wait time |
+| `exception/GlobalExceptionHandler.java` | Changed | 429 with a `Retry-After` header and problem JSON |
+| `service/AuthService.java` | Changed | Checks the limiter first; a successful login resets that email's bucket |
+| `controller/AuthController.java` | Changed | Passes the client address to the service |
+| `ratelimit/TokenBucketTest.java`, `LoginRateLimiterTest.java` | **New** | Arithmetic and rules, with a fake clock — no sleeping |
+| `service/AuthServiceTest.java`, `controller/AuthControllerTest.java` | Changed | New signature; limiter-first, normalisation, 429 tests |
+| `scripts/verify-phase2.ps1` | Changed | CHECK 8: five wrong passwords, then the right one is refused |
+
+### Why
+
+Nothing stopped a script trying thousands of passwords against `/auth/login`. BCrypt slows each
+attempt, but a list of the 10,000 most common passwords would still get into any account that
+used one.
+
+### How it works
+
+A **token bucket** holds a few attempts, each try takes one, and they drip back at a steady rate.
+Forgiving to people — three typos still leave tries, and more return within minutes — and hard on
+scripts, which get a short burst and then one guess per interval.
+
+Every attempt needs a token from **two** buckets:
+
+| Bucket | Limit | Stops |
+|---|---|---|
+| Per IP | 50, then +1 every 2 seconds | One machine trying many accounts — password spraying |
+| Per email | 5, then +1 per minute | Many machines trying one account — a botnet |
+
+Either alone has a hole the other covers.
+
+### Decisions worth remembering
+
+- **Checked before the database and before BCrypt.** A refused attempt costs the server almost
+  nothing, and even the *correct* password is refused once the bucket is empty — otherwise a
+  script could keep guessing and learn the answer the moment one guess landed.
+- **The email bucket counts unknown emails too.** If only real accounts were limited, a 429 would
+  reveal which emails are registered — user enumeration through a side door.
+- **A successful login resets that email's bucket**, so earlier typos are forgiven. The IP bucket
+  is not reset: one correct password must not refill the budget for everyone on that address.
+- **Bounded memory.** Buckets live in a Caffeine cache with a maximum size, so a flood of random
+  emails cannot exhaust the heap. Idle buckets expire — but only after comfortably longer than a
+  bucket takes to refill, so waiting for eviction is never faster than waiting for the refill.
+- **Hand-written algorithm rather than a library.** About forty lines, fully tested, and the
+  algorithm is the lesson. Bucket4j is the usual production library.
+- **The client address comes from the TCP connection**, not `X-Forwarded-For`, which any client can
+  forge. Behind a gateway this must change to trust the header only from that gateway.
+
+### Result
+
+| Request | Before | After |
+|---|---|---|
+| Sixth wrong password within a minute | 401 | **429**, `Retry-After: 60` |
+| Correct password after five wrong ones | 200 | **429** until the wait passes |
+| Six attempts at an email that doesn't exist | 401 each time | **429** — identical to a real account |
+| Correct password on the first try | 200 | 200 |
+
+### Known consequences
+
+- **Per instance.** Three copies of user-service give an attacker three times the attempts. A
+  shared counter in Redis fixes this in the Redis phase.
+- **Cache eviction under a flood.** With enough distinct random emails, a partly drained bucket can
+  be evicted early. The per-IP limit makes that slow from one machine; a shared Redis counter
+  removes it.
+- **Shared addresses.** Everyone behind one office or mobile-carrier address shares the 50-attempt
+  IP budget. Generous for normal use; worth revisiting with real traffic.
 
 ---
 

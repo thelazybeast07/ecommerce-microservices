@@ -102,6 +102,15 @@
         </dependency>
 
         <!-- OpenAPI 3 spec generation + Swagger UI -->
+        <!--
+          Bounded in-memory cache for the login rate limiter. No version here: Spring Boot's
+          dependency management supplies it, so it always matches the Boot release.
+        -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

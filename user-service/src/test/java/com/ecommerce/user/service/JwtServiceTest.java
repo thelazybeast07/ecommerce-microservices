@@ -1,7 +1,6 @@
 package com.ecommerce.user.service;
 
 import com.ecommerce.user.configuration.JwtProperties;
-import com.ecommerce.user.entity.Customer;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;

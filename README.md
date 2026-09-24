@@ -84,7 +84,7 @@ survives user-service being down.
 | Token propagation | order-service forwards the caller's token, so downstream ownership rules apply unchanged |
 | Stateless | No `HttpSession` is ever created; any instance can serve any request |
 
-Passwords are BCrypt-hashed. Login failures are indistinguishable — an unknown email and a wrong
+Login is rate limited per IP and per email (token buckets), checked before the password is. Passwords are BCrypt-hashed. Login failures are indistinguishable — an unknown email and a wrong
 password return the same 401, so the API cannot be used to enumerate registered addresses.
 
 ## Design decisions
@@ -127,7 +127,8 @@ Deliberate, documented, and deferred rather than hidden:
 - **Tokens cannot be revoked.** Deactivating a customer leaves their existing token valid until it
   expires. Short expiry (15 minutes) bounds the damage; refresh tokens and a Redis denylist are the
   next step.
-- **No rate limiting on login.**
+- **Login rate limits are per instance.** Each copy of user-service keeps its own counters; a shared
+  Redis counter is the next step.
 - **No API gateway** — clients call each service directly.
 
 ## Roadmap

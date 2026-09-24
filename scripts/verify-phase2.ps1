@@ -466,6 +466,37 @@ if (Assert-Status $r 200 'Second cancel returns 200, not an error') {
 Write-Lesson 'Idempotent: repeating an operation gives the same result. Networks retry.'
 
 # ---------------------------------------------------------------------------
+Write-Header 'CHECK 8 - Login is rate limited'
+
+Write-Step 'Registering a fresh customer for the rate-limit test'
+$dave = New-TestCustomer -Label 'dave'
+
+Write-Step 'Five wrong passwords for dave'
+$allWrong401 = $true
+foreach ($i in 1..5) {
+    $r = Invoke-Api -Method POST -Uri "$UserSvc/api/v1/auth/login" -Body @{ email = $dave.Email; password = "wrong-guess-$i" }
+    if ($r.Status -ne 401) { $allWrong401 = $false; Write-Fail "Attempt $i expected 401 but got $($r.Status)" }
+}
+if ($allWrong401) { Write-Pass 'Five wrong passwords -> five ordinary 401s' }
+
+Write-Step 'Sixth attempt - with the CORRECT password'
+$r = Invoke-Api -Method POST -Uri "$UserSvc/api/v1/auth/login" -Body @{ email = $dave.Email; password = $Password }
+if (Assert-Status $r 429 'Refused even with the right password') {
+    Write-Info "retryAfterSeconds: $($r.Body.retryAfterSeconds)"
+}
+Write-Lesson 'The limit is checked BEFORE the password. Otherwise a script could keep guessing'
+Write-Lesson 'and learn the answer the moment one guess slipped through.'
+
+Write-Step 'The same test against an email that does not exist'
+$ghost = "nobody-$(Get-Random -Maximum 999999)@example.com"
+foreach ($i in 1..5) {
+    Invoke-Api -Method POST -Uri "$UserSvc/api/v1/auth/login" -Body @{ email = $ghost; password = "guess-$i" } | Out-Null
+}
+$r = Invoke-Api -Method POST -Uri "$UserSvc/api/v1/auth/login" -Body @{ email = $ghost; password = 'guess-6' }
+Assert-Status $r 429 'An unknown email is limited exactly like a real one' | Out-Null
+Write-Lesson 'If only real accounts were limited, the 429 would reveal which emails are registered.'
+
+# ---------------------------------------------------------------------------
 Write-Header 'SUMMARY'
 
 Write-Host ''
@@ -476,13 +507,14 @@ Write-Host '  Test data created by this run (left in place, nothing deleted):' -
 Write-Host "    alice (ADMIN) $($alice.Email)" -ForegroundColor DarkGray
 Write-Host "    bob           $($bob.Email)" -ForegroundColor DarkGray
 Write-Host "    carol         $($carol.Email)" -ForegroundColor DarkGray
+Write-Host "    dave          $($dave.Email)  (rate-limited for about a minute)" -ForegroundColor DarkGray
 Write-Host "    order         $orderId" -ForegroundColor DarkGray
 Write-Host ''
 Write-Host "  All three log in with the password: $Password" -ForegroundColor DarkGray
 Write-Host ''
 
 if ($script:Failed -eq 0) {
-    Write-Host '  All checks passed. Authentication and authorization work end to end.' -ForegroundColor Green
+    Write-Host '  All checks passed. Authentication, authorization and rate limiting work end to end.' -ForegroundColor Green
 } else {
     Write-Host '  Some checks failed - scroll up for the [FAIL] lines.' -ForegroundColor Red
 }

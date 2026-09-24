@@ -20,7 +20,6 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-      
         jdbc:
           time_zone: UTC
 
@@ -50,6 +49,21 @@ jwt:
   # when one leaks or an account is deactivated. See the walkthrough.
   expiry-minutes: ${JWT_EXPIRY_MINUTES:15}
   issuer: ecommerce-user-service
+
+login-rate-limit:
+  # Stops one machine from trying many accounts. Generous enough for an office or a
+  # household sharing one public IP address.
+  per-ip:
+    capacity: 50
+    refill-every: 2s
+  # Stops many machines from trying one account. A person who mistypes has five tries,
+  # then one more per minute; a password-guessing script gets about 1,440 guesses a day
+  # instead of millions.
+  per-email:
+    capacity: 5
+    refill-every: 1m
+  # Upper bound on buckets held in memory, so random emails cannot exhaust the heap.
+  max-tracked-keys: 100000
 
 management:
   endpoints:

@@ -4,6 +4,7 @@ import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.TokenResponse;
 import com.ecommerce.user.entity.Customer;
 import com.ecommerce.user.exception.InvalidCredentialsException;
+import com.ecommerce.user.ratelimit.LoginRateLimiter;
 import com.ecommerce.user.repository.CustomerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,7 @@ public class AuthService {
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final LoginRateLimiter loginRateLimiter;
 
     /**
      * Verifies an email and password and issues a token.
@@ -33,9 +35,15 @@ public class AuthService {
      * <p>Every failure path returns the SAME message on purpose. If "no such email" read
      * differently from "wrong password", anyone could probe which addresses are registered -
      * a privacy leak and the first step of a targeted attack. This is called user enumeration.
+     *
+     * @param clientIp the caller's address, used for rate limiting
      */
-    public TokenResponse login(LoginRequest request) {
+    public TokenResponse login(LoginRequest request, String clientIp) {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
+
+        // FIRST, before the database and before BCrypt. A refused attempt must cost the server
+        // almost nothing, and must behave identically whether or not the email exists.
+        loginRateLimiter.checkAndConsume(clientIp, email);
 
         Customer customer = customerRepository.findByEmail(email)
                 .orElseThrow(() -> {
@@ -55,6 +63,7 @@ public class AuthService {
         }
 
         log.info("Login succeeded for customerId={}", customer.getId());
+        loginRateLimiter.recordSuccess(email);
         return new TokenResponse(jwtService.issueToken(customer), "Bearer", jwtService.expirySeconds());
     }
 }

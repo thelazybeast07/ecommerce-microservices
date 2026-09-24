@@ -5,6 +5,8 @@ import com.ecommerce.user.dto.LoginRequest;
 import com.ecommerce.user.dto.TokenResponse;
 import com.ecommerce.user.entity.Customer;
 import com.ecommerce.user.exception.InvalidCredentialsException;
+import com.ecommerce.user.exception.TooManyLoginAttemptsException;
+import com.ecommerce.user.ratelimit.LoginRateLimiter;
 import com.ecommerce.user.repository.CustomerRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +23,10 @@ import static com.ecommerce.user.service.CustomerServiceTest.customerWithId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,14 +36,18 @@ class AuthServiceTest {
     private CustomerRepository customerRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private LoginRateLimiter loginRateLimiter;
 
     private AuthService authService;
+
+    private static final String IP = "203.0.113.7";
 
     @BeforeEach
     void setUp() {
         JwtService jwtService = new JwtService(
                 new JwtProperties("test-secret-that-is-long-enough-for-hs256!", 15, "issuer"));
-        authService = new AuthService(customerRepository, passwordEncoder, jwtService);
+        authService = new AuthService(customerRepository, passwordEncoder, jwtService, loginRateLimiter);
     }
 
     @Test
@@ -46,8 +56,7 @@ class AuthServiceTest {
                 .thenReturn(Optional.of(customerWithId(UUID.randomUUID())));
         when(passwordEncoder.matches("correct-horse-battery", "bcrypt-hash")).thenReturn(true);
 
-        TokenResponse response = authService.login(
-                new LoginRequest("jane.doe@example.com", "correct-horse-battery"));
+        TokenResponse response = authService.login(new LoginRequest("jane.doe@example.com", "correct-horse-battery"), IP);
 
         assertThat(response.accessToken().split("\\.")).hasSize(3);
         assertThat(response.tokenType()).isEqualTo("Bearer");
@@ -61,8 +70,7 @@ class AuthServiceTest {
                 .thenReturn(Optional.of(customerWithId(UUID.randomUUID())));
         when(passwordEncoder.matches("correct-horse-battery", "bcrypt-hash")).thenReturn(true);
 
-        assertThat(authService.login(
-                new LoginRequest("  JANE.DOE@EXAMPLE.COM  ", "correct-horse-battery")).accessToken())
+        assertThat(authService.login(new LoginRequest("  JANE.DOE@EXAMPLE.COM  ", "correct-horse-battery"), IP).accessToken())
                 .isNotBlank();
     }
 
@@ -71,13 +79,13 @@ class AuthServiceTest {
     void login_failuresAreIndistinguishable() {
         when(customerRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
         Throwable unknownEmail = catchThrowable(
-                () -> authService.login(new LoginRequest("nobody@example.com", "whatever")));
+                () -> authService.login(new LoginRequest("nobody@example.com", "whatever"), IP));
 
         when(customerRepository.findByEmail("jane.doe@example.com"))
                 .thenReturn(Optional.of(customerWithId(UUID.randomUUID())));
         when(passwordEncoder.matches("wrong", "bcrypt-hash")).thenReturn(false);
         Throwable wrongPassword = catchThrowable(
-                () -> authService.login(new LoginRequest("jane.doe@example.com", "wrong")));
+                () -> authService.login(new LoginRequest("jane.doe@example.com", "wrong"), IP));
 
         assertThat(unknownEmail).isInstanceOf(InvalidCredentialsException.class);
         assertThat(wrongPassword).isInstanceOf(InvalidCredentialsException.class);
@@ -92,8 +100,44 @@ class AuthServiceTest {
         when(customerRepository.findByEmail("jane.doe@example.com")).thenReturn(Optional.of(inactive));
         when(passwordEncoder.matches("correct-horse-battery", "bcrypt-hash")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.login(
-                new LoginRequest("jane.doe@example.com", "correct-horse-battery")))
+        assertThatThrownBy(() -> authService.login(new LoginRequest("jane.doe@example.com", "correct-horse-battery"), IP))
                 .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    @Test
+    @DisplayName("a rate-limited attempt is refused before the database or BCrypt is touched")
+    void login_rateLimited_neverReachesDatabaseOrPasswordCheck() {
+        doThrow(new TooManyLoginAttemptsException(42))
+                .when(loginRateLimiter).checkAndConsume(anyString(), anyString());
+
+        assertThatThrownBy(() -> authService.login(
+                new LoginRequest("jane.doe@example.com", "correct-horse-battery"), IP))
+                .isInstanceOf(TooManyLoginAttemptsException.class);
+
+        verifyNoInteractions(customerRepository, passwordEncoder);
+    }
+
+    @Test
+    @DisplayName("the limiter sees the NORMALISED email, so JANE@ and jane@ share one bucket")
+    void login_limiterKeyIsNormalisedEmail() {
+        when(customerRepository.findByEmail("jane.doe@example.com"))
+                .thenReturn(Optional.of(customerWithId(UUID.randomUUID())));
+        when(passwordEncoder.matches("correct-horse-battery", "bcrypt-hash")).thenReturn(true);
+
+        authService.login(new LoginRequest("  JANE.DOE@Example.com ", "correct-horse-battery"), IP);
+
+        verify(loginRateLimiter).checkAndConsume(IP, "jane.doe@example.com");
+    }
+
+    @Test
+    @DisplayName("a successful login forgives earlier typos for that email")
+    void login_success_resetsEmailBucket() {
+        when(customerRepository.findByEmail("jane.doe@example.com"))
+                .thenReturn(Optional.of(customerWithId(UUID.randomUUID())));
+        when(passwordEncoder.matches("correct-horse-battery", "bcrypt-hash")).thenReturn(true);
+
+        authService.login(new LoginRequest("jane.doe@example.com", "correct-horse-battery"), IP);
+
+        verify(loginRateLimiter).recordSuccess("jane.doe@example.com");
     }
 }
